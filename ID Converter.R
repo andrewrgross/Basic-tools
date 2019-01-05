@@ -18,7 +18,29 @@ attributes = listAttributes(ensembl)
 ####################################################################################################################################################
 ### Main Function
 
+convert.ids <- function(dataframe, add.gene.name.column = TRUE) {
+  ### This function will convert a row name consisting of a contactenated ensembl ID and gene to one or the other,
+  ### based on the users instruction (2018-10-04)
+  ensemblIDs <- c()                                           # Empty lists are initialized to receive IDs as they're created
+  gene.names <- c()
+  for (rowName in row.names(dataframe)) {                     # Loops through all rows in the data frame
+    ensemblID <- strsplit(rowName,"\\.")[[1]][1]                 # Splits the row name and declares the ensembl ID
+    gene.name <- strsplit(rowName,"\\_")[[1]][2]                 # Splits the row name, declares the gene name
+    ensemblIDs <- c(ensemblIDs, ensemblID)                       # Adds ensembl ID and gene name to appropriate lists
+    gene.names <- c(gene.names, gene.name)
+  }
+  row.names(dataframe) <- ensemblIDs                          # assigns the new row names
+  if(add.gene.name.column == TRUE) {
+    dataframe$Gene <- gene.names
+  }
+  return(dataframe)                                           # Returns the data frame with new rows
+}
+
+
 convert.to.entrez <- function(df.to.convert) {
+  ### This function converts the row names in a data frame from Ensembl IDs to Entrez IDs.  
+  ### The function runs two conversions: the Homebrew converter loops through the IDs and searches a conversion dictionary for each.
+  ### The sym2eg function converts gene names to 
   data("egSymb")
   x <- org.Hs.egENSEMBL                          # Get the entrez gene IDs that are mapped to an Ensembl ID
   mapped_genes <- mappedkeys(x)                  # Convert to a list
@@ -72,6 +94,7 @@ convert.to.entrez <- function(df.to.convert) {
   if (non.unique.count == 0) {
     row.names(df.to.convert) <- df.to.convert$join
     df.to.convert <- df.to.convert[1:(ncol(df.to.convert)-3)]
+    output <- df.to.convert
     print('ID conversion complete')
   }
   if (non.unique.count >0) {
@@ -80,11 +103,48 @@ convert.to.entrez <- function(df.to.convert) {
     id.count.table <- id.count.table[id.count.table.order]
     non.unique.pos <- which(id.count.table>1)
     non.unique.ids <- names(non.unique.pos)
+    non.unique.rows <- c()
+    for(ids in non.unique.ids){
+      n.u.rows = grep(ids,df.to.convert$join)
+      non.unique.rows <- c(non.unique.rows, n.u.rows)
+    }
     print('The following non unique IDs were generated.  Please resolve manually:')
     print(head(non.unique.ids,20))
+
+    output <- list(converted.df = df.to.convert, non.unique.ids = non.unique.ids, non.unique.row.numbers = non.unique.rows, non.unique.rows = df.to.convert[non.unique.rows,])
   }
-  return(df.to.convert)
+  return(output)
 }
+
+addGene <- function(dataframe) {
+  genes <- getBM(attributes=c('ensembl_gene_id','external_gene_name'), filters='ensembl_gene_id', values=row.names(dataframe), mart=ensembl)
+  genes <- genes[match(row.names(dataframe),genes[,1]),]
+  Gene <- c()
+  for (rowNumber in 1:length(genes[,1])) {
+    newGene <- genes[rowNumber,][,2]
+    Gene <- c(Gene, newGene)
+  }
+  dataframe[length(dataframe)+1] <- Gene
+  names(dataframe)[ncol(dataframe)] <- "Gene"
+  return(dataframe)
+}
+
+add.description <- function(dataframe, identifier = (c('ensembl_gene_id', 'external_gene_name' ))) {
+  descr <- getBM(attributes=c('ensembl_gene_id','description'), filters= identifier, values=row.names(dataframe), mart=ensembl)
+  descr <- descr[match(row.names(dataframe),descr[,1]),]
+  descriptions <- c()
+  for (rowNumber in 1:length(descr[,1])) {
+    newDescr <- descr[rowNumber,][,2]
+    newDescr <- strsplit(newDescr, " \\[")[[1]][1]
+    descriptions <- c(descriptions, newDescr)
+  }
+  dataframe[length(dataframe)+1] <- descriptions
+  names(dataframe)[ncol(dataframe)] <- "Description"
+  return(dataframe)
+}
+
+
+
 
 ####################################################################################################################################################
 ### Convert IDs
